@@ -2,9 +2,10 @@ require('dotenv').config({ silent: true });
 
 const redis = require('../lib/redis.js');
 const Alert = require('../lib/bot/alert.js');
+const mgEmail = require('../lib/bot/send-email.js');
 const sms = require('../lib/bot/send-sms.js');
 
-const COOLDOWN = 1;//3 * 24 * 60 * 60; // max one text every 3 days
+const COOLDOWN = 1;
 
 (async () => {
   try {
@@ -27,7 +28,7 @@ const COOLDOWN = 1;//3 * 24 * 60 * 60; // max one text every 3 days
           return;
         }
 
-        // skip sms message if alert is on cooldown
+        // skip message if alert is on cooldown
         const cooldownKey = alert.key('cooldown');
         const cooldown = await redis.existsAsync(cooldownKey);
 
@@ -39,15 +40,21 @@ const COOLDOWN = 1;//3 * 24 * 60 * 60; // max one text every 3 days
         const less = alert.price - alert.latestPrice;
         if (less > 0) {
           console.log(`${flight} dropped $${less} to $${alert.latestPrice}${cooldown ? ' (on cooldown)' : ''}`);
-          if (sms.enabled && !cooldown) {
+          if (!cooldown) {
             const noProtocolPath = basePath.substr(basePath.indexOf('://') + 3);
             const message = [
               `WN flight #${alert.number} `,
-              `from ${alert.from} to ${alert.to} on ${alert.formattedDate} `,
-              `was $${alert.price} is now $${alert.latestPrice}. `,
+              `${alert.from} to ${alert.to} on ${alert.formattedDate} `,
+              `was $${alert.price}, is now $${alert.latestPrice}. `,
+              `\n\nOnce rebooked, tap link to lower alert threshold: `,
               `${noProtocolPath}/${alert.id}/change-price?price=${alert.latestPrice}`
             ].join('');
-            await sms.sendSms(alert.phone, message);
+            const subject = [
+              `✈ Southwest Price Drop Alert: $${alert.price} → $${alert.latestPrice}. `
+            ].join('');
+            if (mgEmail.enabled && alert.to_email !== '') { await mgEmail.sendEmail(alert.to_email, subject, message); }
+            if (sms.enabled && alert.phone !== '') { await sms.sendSms(alert.phone, message); }
+
             await redis.setAsync(cooldownKey, '');
             await redis.expireAsync(cooldownKey, COOLDOWN);
           }
