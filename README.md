@@ -1,11 +1,9 @@
 # ALERT!
-### It seems SW got smart and is blocking the Heroku IPs from accessing their site. I'm trying to find a workaround, but it's tough. Local deployments should work fine, as should other cloud providers (Azure, AWS, Digital Ocean, etc).
-
-### In the meantime, @GC-Guy added support for a proxy when making the calls to SW's site.
+Deployed versions prior to 6/30/2019 (< 3.4.0) might want to do a clean deployment - we're changing from Redis to MongoDB, and I don't think it will migrate cleanly (or at all). 
 
 # Southwest Price Drop Bot
 
-This tool lets you monitor the price of Southwest flights that you've booked. It will notify you if the price drops below what you originally paid. Then you can [re-book the same flight](http://dealswelike.boardingarea.com/2014/02/28/if-a-southwest-flight-goes-down-in-price/) and get Southwest credit for the price difference. This tool also lets you monitor the price of all Southwest flights on a given day. It will notify you if any flight on that day drops below the previous cheapest flight. 
+This tool lets you monitor the price of Southwest flights that you've booked. It will notify you if the price drops below what you originally paid. Then you can [re-book the same flight](http://dealswelike.boardingarea.com/2014/02/28/if-a-southwest-flight-goes-down-in-price/) and get Southwest credit for the price difference. This tool also lets you monitor the price of all Southwest flights on a given day. It will notify you if any flight on that day drops below the previous cheapest flight.
 
 Note that you need to have a [Plivo](https://www.plivo.com) account to send the text message notifications and a [Mailgun](https://www.mailgun.com) account to send the email notifications. You can run this tool without these accounts, but you won't get the notifications.
 
@@ -32,6 +30,8 @@ Note: Deployed versions prior to 4/9/2018 using Mailgun will need to verify cons
 Note: Deployed versions prior to 4/28/2018 (< 3.0.0) on Heroku will need to install the buildpack https://github.com/jontewks/puppeteer-heroku-buildpack
 
 Note: Deployed versions prior to 7/21/2018 (< 3.2.0) on Heroku will need to verify the `PROXY` constant if you want to use a proxy to make the calls.
+
+Note: Deployed versions prior to 6/30/2019 (< 3.4.0) might want to do a clean deployment - we're changing from Redis to MongoDB, and I don't think it will migrate cleanly (or at all). Otherwise, you'll need to add the mLab MongoDB add-on manually.
 
 ## Screenshots
 
@@ -71,10 +71,28 @@ Note: Deployed versions prior to 7/21/2018 (< 3.2.0) on Heroku will need to veri
   </a>
 </kbd>
 
+## Southwest Bot Protection
+
+<span style="color:red">Right now, Southwest is successfully blocking requests from this project.</span>
+
+Southwest has some very fancy bot protections in place.
+
+* Heroku IPs, and other hosting providers, are blocked from accessing their site. Local deployments should be permitted to access their site, and some other cloud providers may work as well. The most reliable workaround is using a residential proxy service.
+* There's also some tricky and obfuscated Javascript that detects headless browsers and is updated very frequently. There's a community of folks that implement headless chrome detection evasions, but it's a cat and mouse game.
+  * https://github.com/paulirish/headless-cat-n-mouse/blob/master/apply-evasions.js
+  * https//github.com/berstend/puppeteer-extra/tree/master/packages/puppeteer-extra-plugin-stealth/
+  * https://github.com/shirshak55/scrapper-tools
+* Use `CHROME_DEBUG=true DEBUG="puppeteer:*"` combined with `node inspect` to debug strange chrome issues.
+   * Request interception will log all URL load attempts and accept all requests.
+   * `slowmo` is enabled and `headless` is disabled
+   * `https://infosimples.github.io/detect-headless` will be opened before a Southwest URL
+
+
 ## Proxy information
 
 Instructions on deploying a proxy is outside the scope of this project. However, here's some information about proxies that might be useful:
 
+  * A hosted (cheap) proxy that works is https://luminati.io. It's less than $1 each month and seems reliable. Most public proxies don't seem to work, I imagine there is some sort of public proxy block list that is in place.
   * You could use something like [Squid](http://www.squid-cache.org) and spin in up natively, in a container, or in a VM. Obviously you'll want to do this outside of Heroku
   * If you do use Squid, you'll want to set up port forwarding or running on a high random port, and locking down `squid.conf` with something like this to prevent someone from using your setup as an open proxy:
 
@@ -83,9 +101,39 @@ Instructions on deploying a proxy is outside the scope of this project. However,
   http_access allow swa
   http_access deny all
   ```
-To configure the Price Drop Bot to use your proxy, define a new PROXY variable within the Heroku Config. The proxy format should just be IP:port. Example: 123.123.123.123:1234
+To configure the Price Drop Bot to use your proxy, define a new `PROXY` variable within the Heroku Config. The proxy format should be http://IP:port. Example: `heroku config:set PROXY='http://123.123.123.123:1234'`
+
+## Development
+
+To run the test suite:
+
+```
+yarn test
+```
+
+To run a console loaded up with `Alert` and `Flight` objects:
+
+```
+yarn console
+```
+
+When debugging chrome/puppeteer issues it's helpful to use the following command:
+
+```
+DEBUG="puppeteer:*" CHROME_DEBUG=true node tasks/check.js
+```
+
+This will send helpful chromium debugging output into your console, and enable some additional
+logging to help debug what might be going wrong.
 
 ## Version history
+
+### [3.4.0] - 2019-06-30
+  - Move from Redis to MongoDB
+  - Update scraping logic
+  - Improve proxy support
+  - Add some anti-bot detection measures
+  - Thanks to @iloveitaly for these changes!
 ### [3.3.0] - 2018-12-25
   - Add support for award flights (points)
   - Updated dependencies to latest versions
@@ -100,7 +148,7 @@ To configure the Price Drop Bot to use your proxy, define a new PROXY variable w
   - Flight data loaded after page is loaded - added wait for .flight-stops selector
   - Change URL to current format
   - Fix test to handle case of no prices found
-  - Add tests for expected bad inputs 
+  - Add tests for expected bad inputs
 ### [3.1.2] - 2018-5-24
   - Add unit test for Alerts
   - Add additional logging and error handling
@@ -122,15 +170,16 @@ To configure the Price Drop Bot to use your proxy, define a new PROXY variable w
 ### [2.0.1] - 2018-4-9
   - Integrate upstream changes from PetroccoCo (email handling) and pmschartz (redesign)
 ### [2.0.0] - 2017-12-2
-  - Support Mailgun and Plivo (email and sms) 
+  - Support Mailgun and Plivo (email and sms)
 ### [1.9.5] - 2017-11-30
   - Support Mailgun
-### [< 1.9.5] 
+### [< 1.9.5]
   - Prior work
 
 ## Attribution
 
 This is a fork of [minamhere's fork](https://github.com/minamhere/southwest-price-drop-bot) of [maverick915's fork](https://github.com/maverick915/southwest-price-drop-bot) of [scott113341's original project](https://github.com/scott113341/southwest-price-drop-bot).
+
 Downstream changes were integrated from:
   * [PetroccoCo](https://github.com/PetroccoCo/southwest-price-drop-bot) - Email Handling
   * [pmschartz](https://github.com/pmschartz/southwest-price-drop-bot) - Redesign
@@ -138,6 +187,7 @@ Downstream changes were integrated from:
 Thanks to the following for their contributions:
   * @evliu - target the price list items more dynamically
   * @GC-Guy - proxy support
+  * @iloveitaly - MongoDB, updated scraping/proxy support, anti-bot detection
 
 
 [deploy-image]: https://www.herokucdn.com/deploy/button.svg
